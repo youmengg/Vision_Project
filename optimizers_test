@@ -1,0 +1,133 @@
+import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import (
+    Conv2D, MaxPooling2D, Dense,
+    Dropout, Flatten, BatchNormalization
+)
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.optimizers import Adam, SGD, Adagrad
+from tensorflow.keras.callbacks import EarlyStopping
+import matplotlib.pyplot as plt
+import time
+
+
+IMG_SIZE = 48
+BATCH_SIZE = 64
+EPOCHS = 15          
+NUM_CLASSES = 7
+
+train_dir = r"C:\Users\marya\Downloads\emotion_dataset\train"
+test_dir  = r"C:\Users\marya\Downloads\emotion_dataset\test"
+
+train_datagen = ImageDataGenerator(
+    rescale=1./255,
+    horizontal_flip=True
+)
+
+test_datagen = ImageDataGenerator(rescale=1./255)
+
+train_gen = train_datagen.flow_from_directory(
+    train_dir,
+    target_size=(IMG_SIZE, IMG_SIZE),
+    color_mode="grayscale",
+    batch_size=BATCH_SIZE,
+    class_mode="categorical",
+    shuffle=True
+)
+
+val_gen = test_datagen.flow_from_directory(
+    test_dir,
+    target_size=(IMG_SIZE, IMG_SIZE),
+    color_mode="grayscale",
+    batch_size=BATCH_SIZE,
+    class_mode="categorical",
+    shuffle=False
+)
+
+def build_fast_model():
+    return Sequential([
+        Conv2D(32, (3,3), activation="relu",
+               input_shape=(IMG_SIZE, IMG_SIZE, 1)),
+        MaxPooling2D(2,2),
+
+        Conv2D(64, (3,3), activation="relu"),
+        MaxPooling2D(2,2),
+
+        Flatten(),
+        Dense(128, activation="relu"),
+        Dropout(0.4),
+        Dense(NUM_CLASSES, activation="softmax")
+    ])
+
+optimizers = {
+    "Adam": Adam(learning_rate=0.001),
+    "SGD": SGD(learning_rate=0.01, momentum=0.9),
+    "Adagrad": Adagrad(learning_rate=0.01)
+}
+
+histories = {}
+times = {}
+
+for name, optimizer in optimizers.items():
+    print(f"\n Training with {name} ")
+
+    model = build_fast_model()
+    model.compile(
+        optimizer=optimizer,
+        loss="categorical_crossentropy",
+        metrics=["accuracy"]
+    )
+
+    start = time.time()
+
+    history = model.fit(
+        train_gen,
+        epochs=EPOCHS,
+        validation_data=val_gen,
+        callbacks=[EarlyStopping(patience=3, restore_best_weights=True)],
+        verbose=1
+    )
+
+    end = time.time()
+
+    model.save(f"emotion_model_{name.lower()}_fast.keras")
+    print(f"Saved emotion_model_{name.lower()}_fast.keras")
+
+    histories[name] = history
+    times[name] = end - start
+
+
+# Validation Accuracy
+plt.figure(figsize=(8,5))
+for name, h in histories.items():
+    plt.plot(h.history['val_accuracy'], label=name)
+plt.title("Validation Accuracy vs Epoch")
+plt.xlabel("Epoch")
+plt.ylabel("Accuracy")
+plt.legend()
+plt.grid(True)
+plt.show()
+
+# Validation Loss
+plt.figure(figsize=(8,5))
+for name, h in histories.items():
+    plt.plot(h.history['val_loss'], label=name)
+plt.title("Validation Loss vs Epoch")
+plt.xlabel("Epoch")
+plt.ylabel("Loss")
+plt.legend()
+plt.grid(True)
+plt.show()
+
+# Training Time
+plt.figure(figsize=(6,4))
+plt.bar(times.keys(), times.values())
+plt.title("Training Time Comparison")
+plt.ylabel("Seconds")
+plt.grid(True)
+plt.show()
+
+print("\nOPTIMIZER SUMMARY")
+for name in histories:
+    best_acc = max(histories[name].history['val_accuracy'])
+    print(f"{name}: Best Val Acc = {best_acc:.3f}, Time = {times[name]:.1f}s")
